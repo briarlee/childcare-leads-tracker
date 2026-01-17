@@ -1,0 +1,131 @@
+name: 🏫 幼儿园商机每日追踪
+
+on:
+  schedule:
+    # 北京时间每天上午9:00 = UTC 01:00
+    - cron: '0 1 * * *'
+  
+  # 允许手动触发
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '演习模式（不写入数据）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      debug_mode:
+        description: '调试模式'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  fetch-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 🐍 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔧 创建凭证文件
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+      
+      - name: 🚀 运行商机追踪系统
+        env:
+          # Google Sheets
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_CREDENTIALS_PATH: credentials.json
+          
+          # PushPlus
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHPLUS_TOPIC: ${{ secrets.PUSHPLUS_TOPIC }}
+          
+          # 钉钉
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+          
+          # Claude AI
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: claude-sonnet-4-20250514
+          
+          # 通知策略
+          CRITICAL_THRESHOLD: '90'
+          HIGH_THRESHOLD: '85'
+          MEDIUM_THRESHOLD: '70'
+          ENABLE_PUSHPLUS: 'true'
+          ENABLE_DINGTALK: 'true'
+          ENABLE_INSTANT_ALERTS: 'true'
+          ENABLE_SOUND_ALERTS: 'true'
+          ENABLE_CLAUDE_AI: 'true'
+          
+          # 数据源配置
+          ENABLED_SOURCES: 'ontario,acecqa'
+          FETCH_TIMEOUT: '30'
+          MAX_RETRIES: '3'
+          
+          # 运行模式
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+          LOG_LEVEL: 'INFO'
+          
+          # 其他配置
+          TIMEZONE: 'Asia/Shanghai'
+          MAX_RECORDS_PER_RUN: '100'
+          
+        run: |
+          cd src
+          python main.py
+      
+      - name: 📄 上传运行日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_number }}-${{ github.run_attempt }}
+          path: logs/
+          retention-days: 30
+          if-no-files-found: ignore
+      
+      - name: 🧹 清理凭证文件
+        if: always()
+        run: |
+          rm -f credentials.json
+      
+      - name: 📊 输出运行摘要
+        if: success()
+        run: |
+          echo "## ✅ 运行成功" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **运行时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **触发方式**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **演习模式**: ${{ github.event.inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
+      
+      - name: ❌ 失败通知
+        if: failure()
+        run: |
+          echo "## ❌ 运行失败" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "请检查日志获取详细错误信息。" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **运行时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **触发方式**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

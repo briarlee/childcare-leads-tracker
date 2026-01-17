@@ -1,0 +1,58 @@
+# ==================== 敏感文件 ====================
+.env
+credentials.json
+*.pem
+*.key
+
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==================== 虚拟环境 ====================
+venv/
+ENV/
+env/
+.venv/
+
+# ==================== IDE ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==================== 日志 ====================
+logs/
+*.log
+
+# ==================== 测试 ====================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ==================== 临时文件 ====================
+tmp/
+temp/
+*.tmp
+*.bak

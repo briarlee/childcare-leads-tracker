@@ -1,0 +1,23 @@
+# 幼儿园商机自动追踪系统 - Python依赖
+# Python 3.11+
+
+# ==================== 核心依赖 ====================
+gspread>=5.12.0                  # Google Sheets API
+google-auth>=2.23.0              # Google认证
+google-auth-oauthlib>=1.1.0      # OAuth支持
+pandas>=2.1.0                    # 数据处理
+requests>=2.31.0                 # HTTP请求
+python-dotenv>=1.0.0             # 环境变量管理
+
+# ==================== AI评分 ====================
+anthropic>=0.18.0                # Claude API
+
+# ==================== 数据处理 ====================
+chardet>=5.2.0                   # 编码检测
+fuzzywuzzy>=0.18.0               # 模糊匹配
+python-Levenshtein>=0.21.0       # 快速字符串匹配
+
+# ==================== 可选依赖（Phase 2+） ====================
+# feedparser>=6.0.10             # RSS解析（招标信息）
+# beautifulsoup4>=4.12.0         # 网页爬取
+# lxml>=4.9.0                    # XML解析
