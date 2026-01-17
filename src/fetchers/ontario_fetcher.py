@@ -9,8 +9,8 @@ from datetime import datetime
 import pandas as pd
 
 from .base_fetcher import BaseFetcher
-from ..config import config
-from ..utils.helpers import get_today
+from config import config
+from utils.helpers import get_today
 
 
 class OntarioFetcher(BaseFetcher):

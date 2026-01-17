@@ -6,9 +6,9 @@
 from typing import Dict, List, Optional
 from datetime import datetime
 
-from ..utils.validators import DataValidator
-from ..utils.helpers import clean_string, format_date, get_today
-from ..utils.logger import get_logger
+from utils.validators import DataValidator
+from utils.helpers import clean_string, format_date, get_today
+from utils.logger import get_logger
 
 
 class DataProcessor:

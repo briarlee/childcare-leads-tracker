@@ -8,7 +8,7 @@ from typing import Dict, List
 import pandas as pd
 
 from .base_fetcher import BaseFetcher
-from ..utils.helpers import get_today
+from utils.helpers import get_today
 
 
 class BCFetcher(BaseFetcher):

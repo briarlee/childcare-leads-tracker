@@ -12,9 +12,9 @@ import requests
 from typing import Dict, List, Optional
 from datetime import datetime
 
-from ..config import config
-from ..utils.logger import get_logger
-from ..utils.helpers import get_priority_emoji
+from config import config
+from utils.logger import get_logger
+from utils.helpers import get_priority_emoji
 
 
 class DingTalkNotifier:

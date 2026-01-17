@@ -10,8 +10,8 @@ from typing import Dict, List, Optional
 import requests
 import pandas as pd
 
-from ..config import config
-from ..utils.logger import get_logger
+from config import config
+from utils.logger import get_logger
 
 
 class BaseFetcher(ABC):

@@ -6,8 +6,8 @@ Claude AI 分析模块
 import json
 from typing import Dict, List, Optional
 
-from ..config import config
-from ..utils.logger import get_logger
+from config import config
+from utils.logger import get_logger
 from .scorer import Scorer
 
 

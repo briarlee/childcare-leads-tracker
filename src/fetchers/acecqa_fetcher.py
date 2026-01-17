@@ -11,7 +11,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 from .base_fetcher import BaseFetcher
-from ..utils.helpers import get_today
+from utils.helpers import get_today
 
 
 class ACECQAFetcher(BaseFetcher):

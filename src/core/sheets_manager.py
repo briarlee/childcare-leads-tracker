@@ -11,8 +11,8 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
-from ..config import config
-from ..utils.logger import get_logger
+from config import config
+from utils.logger import get_logger
 
 
 class SheetsManager:

@@ -6,8 +6,8 @@
 from typing import Dict, List, Set
 from fuzzywuzzy import fuzz
 
-from ..utils.logger import get_logger
-from ..utils.helpers import generate_record_id
+from utils.logger import get_logger
+from utils.helpers import generate_record_id
 
 
 class Deduplicator:

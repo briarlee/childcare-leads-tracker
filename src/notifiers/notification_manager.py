@@ -6,8 +6,8 @@
 from typing import Dict, List
 from datetime import datetime
 
-from ..config import config
-from ..utils.logger import get_logger
+from config import config
+from utils.logger import get_logger
 from .pushplus_notifier import PushPlusNotifier
 from .dingtalk_notifier import DingTalkNotifier
 
