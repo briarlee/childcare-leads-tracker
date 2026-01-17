@@ -11,10 +11,10 @@ from datetime import datetime
 class DataValidator:
     """数据验证器"""
     
-    # 必填字段定义
+    # 必填字段定义（放宽要求）
     REQUIRED_FIELDS = {
-        'new_project': ['name', 'city', 'country', 'source', 'discovered_date'],
-        'sale': ['name', 'city', 'country', 'source', 'discovered_date'],
+        'new_project': ['name', 'country', 'source', 'discovered_date'],  # city可选
+        'sale': ['name', 'country', 'source', 'discovered_date'],
         'tender': ['name', 'country', 'source', 'published_date']
     }
     
@@ -107,9 +107,11 @@ class DataValidator:
                 if not cls._validate_date(date_value):
                     errors.append(f"日期格式无效: {date_field}={date_value}")
         
-        # 验证国家
+        # 验证国家（支持emoji格式和标准格式）
         country = record.get('country', '').lower()
-        if country and country not in ['canada', 'australia', '🇨🇦', '🇦🇺', 'ca', 'au']:
+        valid_countries = ['canada', 'australia', 'ca', 'au', '🇨🇦', '🇦🇺', 
+                          '🇨🇦 canada', '🇦🇺 australia']
+        if country and not any(valid in country for valid in valid_countries):
             errors.append(f"不支持的国家: {country}")
         
         return len(errors) == 0, errors

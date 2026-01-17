@@ -1,14 +1,17 @@
 """
 ACECQA National Registers 数据获取模块
 获取澳大利亚幼儿教育和护理服务注册数据
+使用完整浏览器头模拟绕过403限制
 """
 
 import re
-from typing import Dict, List
+import time
+from typing import Dict, List, Optional
+from datetime import datetime
 
 import requests
 import pandas as pd
-from bs4 import BeautifulSoup
+from io import StringIO
 
 from .base_fetcher import BaseFetcher
 from utils.helpers import get_today
@@ -17,16 +20,37 @@ from utils.helpers import get_today
 class ACECQAFetcher(BaseFetcher):
     """ACECQA National Registers 数据获取器"""
     
-    # 主页URL（需要从这里获取实际CSV下载链接）
+    # 主页URL
     PAGE_URL = "https://www.acecqa.gov.au/resources/national-registers"
     
-    # 直接CSV URL（如果可用）
-    # 注意：ACECQA的CSV链接可能会变化，需要从页面动态获取
-    DIRECT_CSV_URL = None
+    # 直接CSV下载URLs（用户提供的工作链接）
+    DIRECT_CSV_URLS = [
+        # 全澳大利亚服务列表（主URL）
+        "https://www.acecqa.gov.au/sites/default/files/national-registers/services/Education-services-au-export.csv",
+        # 带nocache参数
+        "https://www.acecqa.gov.au/sites/default/files/national-registers/services/Education-services-au-export.csv?nocache=1",
+    ]
+    
+    # 完整的浏览器头模拟
+    BROWSER_HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-AU,en;q=0.9,en-US;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+    }
     
     def __init__(self):
         super().__init__("ACECQA")
         self.status['type'] = 'CSV'
+        self.session = requests.Session()
+        self.session.headers.update(self.BROWSER_HEADERS)
     
     def fetch(self) -> List[Dict]:
         """获取ACECQA数据"""
@@ -34,72 +58,124 @@ class ACECQAFetcher(BaseFetcher):
         self.logger.info(f"🇦🇺 开始获取 ACECQA National Registers 数据")
         self.logger.info(f"{'='*50}")
         
-        # 首先尝试获取CSV下载链接
-        csv_url = self._get_csv_download_url()
+        df = None
         
-        if csv_url:
-            df = self.fetch_csv(csv_url)
+        # 方法1：尝试直接CSV URLs
+        for csv_url in self.DIRECT_CSV_URLS:
+            self.logger.info(f"📥 尝试直接下载CSV: {csv_url[:60]}...")
+            df = self._fetch_csv_with_session(csv_url)
             if df is not None:
-                records = self.transform(df)
-                self.status['count'] = len(records)
-                self.logger.info(f"📊 ACECQA数据处理完成: {len(records)} 条记录")
-                return records
+                break
+            time.sleep(1)  # 避免请求过快
         
-        # 如果无法获取CSV，使用备用方案
-        self.logger.warning("⚠️ 无法获取ACECQA CSV，使用模拟数据")
-        return self._get_sample_data()
+        # 方法2：从页面动态获取CSV链接
+        if df is None:
+            self.logger.info("📡 尝试从页面获取CSV链接...")
+            csv_url = self._get_csv_download_url()
+            if csv_url:
+                df = self._fetch_csv_with_session(csv_url)
+        
+        # 方法3：使用data.gov.au的备用数据
+        if df is None:
+            self.logger.info("📡 尝试从 data.gov.au 获取...")
+            df = self._fetch_from_data_gov_au()
+        
+        if df is not None:
+            records = self.transform(df)
+            self.status['count'] = len(records)
+            self.status['status'] = '正常'
+            self.logger.info(f"📊 ACECQA数据处理完成: {len(records)} 条记录")
+            return records
+        
+        # 如果所有方法都失败，返回空列表
+        self.logger.warning("⚠️ 无法获取ACECQA数据，返回空列表")
+        self.status['status'] = '异常'
+        self.status['error'] = '所有数据源都无法访问'
+        return []
     
-    def _get_csv_download_url(self) -> str:
-        """从ACECQA页面获取CSV下载链接"""
+    def _fetch_csv_with_session(self, url: str) -> Optional[pd.DataFrame]:
+        """使用session获取CSV"""
         try:
-            self.logger.info(f"📡 访问ACECQA页面获取CSV链接...")
+            # 首先访问主页获取cookies
+            try:
+                self.session.get(self.PAGE_URL, timeout=10)
+            except:
+                pass
             
-            response = requests.get(
-                self.PAGE_URL,
-                timeout=self.timeout,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            )
+            # 然后获取CSV
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             
+            # 检查是否是CSV内容
+            content_type = response.headers.get('Content-Type', '')
+            if 'text/html' in content_type and 'csv' not in content_type:
+                self.logger.warning(f"   返回的是HTML而非CSV")
+                return None
+            
+            # 解析CSV
+            df = pd.read_csv(StringIO(response.text))
+            self.logger.info(f"✅ 下载成功: {len(df)} 行数据")
+            return df
+            
+        except Exception as e:
+            self.logger.warning(f"   下载失败: {str(e)[:100]}")
+            return None
+    
+    def _get_csv_download_url(self) -> Optional[str]:
+        """从ACECQA页面获取CSV下载链接"""
+        try:
+            response = self.session.get(self.PAGE_URL, timeout=30)
+            response.raise_for_status()
+            
+            from bs4 import BeautifulSoup
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # 查找CSV下载链接
-            # ACECQA页面通常有多个注册表的下载链接
             for link in soup.find_all('a', href=True):
                 href = link['href']
                 text = link.get_text().lower()
                 
-                # 查找"已批准服务"或"approved services"的CSV
-                if ('.csv' in href.lower() or 'csv' in text) and \
-                   ('approved' in text or 'service' in text or 'register' in text):
-                    
-                    # 构建完整URL
+                if '.csv' in href.lower() and ('service' in text or 'australia' in text or 'export' in href.lower()):
                     if href.startswith('http'):
-                        csv_url = href
+                        return href
                     else:
-                        csv_url = f"https://www.acecqa.gov.au{href}"
-                    
-                    self.logger.info(f"   找到CSV链接: {csv_url[:80]}...")
-                    return csv_url
+                        return f"https://www.acecqa.gov.au{href}"
             
-            # 备用：查找任何CSV链接
+            # 查找任何CSV链接
             for link in soup.find_all('a', href=True):
-                href = link['href']
-                if '.csv' in href.lower():
+                if '.csv' in link['href'].lower():
+                    href = link['href']
                     if href.startswith('http'):
-                        csv_url = href
+                        return href
                     else:
-                        csv_url = f"https://www.acecqa.gov.au{href}"
-                    self.logger.info(f"   找到备用CSV链接: {csv_url[:80]}...")
-                    return csv_url
+                        return f"https://www.acecqa.gov.au{href}"
             
-            self.logger.warning("⚠️ 未在页面中找到CSV链接")
             return None
             
         except Exception as e:
-            self.logger.error(f"❌ 获取CSV链接失败: {str(e)}")
+            self.logger.warning(f"   获取页面失败: {str(e)[:100]}")
+            return None
+    
+    def _fetch_from_data_gov_au(self) -> Optional[pd.DataFrame]:
+        """从澳大利亚政府开放数据门户获取数据"""
+        try:
+            # data.gov.au 上的ACECQA数据
+            api_url = "https://data.gov.au/data/api/3/action/datastore_search"
+            params = {
+                'resource_id': 'your-resource-id-here',  # 需要找到正确的resource_id
+                'limit': 10000
+            }
+            
+            response = requests.get(api_url, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success') and data.get('result', {}).get('records'):
+                    return pd.DataFrame(data['result']['records'])
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"   data.gov.au 获取失败: {str(e)[:100]}")
             return None
     
     def transform(self, df: pd.DataFrame) -> List[Dict]:
@@ -109,46 +185,20 @@ class ACECQAFetcher(BaseFetcher):
         
         self.logger.debug(f"   CSV列: {columns[:10]}...")
         
-        # ACECQA列名映射（根据实际CSV调整）
+        # ACECQA列名映射（根据实际CSV）
         column_mapping = {
-            'name': self._find_column(columns, [
-                'Service Name', 'SERVICE_NAME', 'Name', 'name',
-                'Approved Provider', 'Provider Name'
-            ]),
-            'address': self._find_column(columns, [
-                'Address', 'ADDRESS', 'Street Address', 'Service Address',
-                'Physical Address'
-            ]),
-            'suburb': self._find_column(columns, [
-                'Suburb', 'SUBURB', 'City', 'Locality'
-            ]),
-            'state': self._find_column(columns, [
-                'State', 'STATE', 'State/Territory'
-            ]),
-            'postcode': self._find_column(columns, [
-                'Postcode', 'POSTCODE', 'Post Code', 'Postal Code'
-            ]),
-            'phone': self._find_column(columns, [
-                'Phone', 'PHONE', 'Contact Phone', 'Telephone'
-            ]),
-            'email': self._find_column(columns, [
-                'Email', 'EMAIL', 'Contact Email'
-            ]),
-            'service_type': self._find_column(columns, [
-                'Service Type', 'SERVICE_TYPE', 'Type', 'Care Type'
-            ]),
-            'approval_number': self._find_column(columns, [
-                'Approval Number', 'APPROVAL_NUMBER', 'SE Number',
-                'Service Approval Number', 'Approval No'
-            ]),
-            'quality_rating': self._find_column(columns, [
-                'Overall Rating', 'Quality Rating', 'OVERALL_RATING',
-                'Quality Area Rating'
-            ]),
-            'approved_places': self._find_column(columns, [
-                'Approved Places', 'APPROVED_PLACES', 'Capacity',
-                'Maximum Approved Places'
-            ]),
+            'name': self._find_column(columns, ['ServiceName', 'Service Name']),
+            'provider': self._find_column(columns, ['ProviderLegalName', 'Provider Name']),
+            'address': self._find_column(columns, ['ServiceAddress', 'Address']),
+            'suburb': self._find_column(columns, ['Suburb', 'City']),
+            'state': self._find_column(columns, ['State', 'State/Territory']),
+            'postcode': self._find_column(columns, ['Postcode', 'Post Code']),
+            'phone': self._find_column(columns, ['Phone', 'Telephone']),
+            'service_type': self._find_column(columns, ['ServiceType', 'Service Type']),
+            'approval_number': self._find_column(columns, ['ServiceApprovalNumber', 'Approval Number']),
+            'quality_rating': self._find_column(columns, ['OverallRating', 'Overall Rating']),
+            'approved_places': self._find_column(columns, ['NumberOfApprovedPlaces', 'Approved Places']),
+            'approval_date': self._find_column(columns, ['ServiceApprovalGrantedDate', 'Approval Date']),
         }
         
         for _, row in df.iterrows():
@@ -175,6 +225,7 @@ class ACECQAFetcher(BaseFetcher):
                 
                 record = {
                     'name': str(name).strip(),
+                    'license_holder': self._safe_get(row, column_mapping['provider']),
                     'address': full_address,
                     'city': str(suburb).strip() if suburb else '',
                     'province': self._normalize_state(state),
@@ -182,13 +233,13 @@ class ACECQAFetcher(BaseFetcher):
                     'license_number': self._safe_get(row, column_mapping['approval_number']),
                     'capacity': capacity,
                     'phone': self._safe_get(row, column_mapping['phone']),
-                    'email': self._safe_get(row, column_mapping['email']),
+                    'email': None,  # ACECQA数据不包含邮箱
                     'service_type': self._safe_get(row, column_mapping['service_type']),
                     'quality_rating': self._safe_get(row, column_mapping['quality_rating']),
                     'license_status': '已批准',
                     'discovered_date': get_today(),
                     'source': 'ACECQA National Register',
-                    'source_url': 'https://www.acecqa.gov.au/resources/national-registers',
+                    'source_url': self.PAGE_URL,
                     'type': '新建',
                 }
                 
@@ -213,13 +264,21 @@ class ACECQAFetcher(BaseFetcher):
             'sa': 'South Australia',
             'tas': 'Tasmania',
             'act': 'Australian Capital Territory',
-            'nt': 'Northern Territory'
+            'nt': 'Northern Territory',
+            'new south wales': 'New South Wales',
+            'victoria': 'Victoria',
+            'queensland': 'Queensland',
+            'western australia': 'Western Australia',
+            'south australia': 'South Australia',
+            'tasmania': 'Tasmania',
+            'australian capital territory': 'Australian Capital Territory',
+            'northern territory': 'Northern Territory'
         }
         
         state_lower = state.lower().strip()
         return state_mapping.get(state_lower, state)
     
-    def _find_column(self, columns: List[str], possible_names: List[str]) -> str:
+    def _find_column(self, columns: List[str], possible_names: List[str]) -> Optional[str]:
         """查找匹配的列名"""
         for name in possible_names:
             if name in columns:
@@ -240,56 +299,6 @@ class ACECQAFetcher(BaseFetcher):
             return str(value).strip() if value else None
         except:
             return None
-    
-    def _get_sample_data(self) -> List[Dict]:
-        """
-        获取示例数据（当无法访问真实数据时使用）
-        在生产环境中这应替换为错误处理
-        """
-        self.logger.info("📋 生成ACECQA示例数据...")
-        
-        # 返回空列表或示例数据用于测试
-        sample_records = [
-            {
-                'name': 'Sydney Learning Centre',
-                'address': '123 George Street, Sydney, NSW 2000',
-                'city': 'Sydney',
-                'province': 'New South Wales',
-                'country': 'Australia',
-                'license_number': 'SE-00123456',
-                'capacity': 75,
-                'phone': '(02) 1234 5678',
-                'email': 'info@sydneylearning.com.au',
-                'service_type': 'Long Day Care',
-                'quality_rating': 'Exceeding NQS',
-                'license_status': '已批准',
-                'discovered_date': get_today(),
-                'source': 'ACECQA (Sample)',
-                'source_url': 'https://www.acecqa.gov.au/resources/national-registers',
-                'type': '新建',
-            },
-            {
-                'name': 'Melbourne Kids Academy',
-                'address': '456 Collins Street, Melbourne, VIC 3000',
-                'city': 'Melbourne',
-                'province': 'Victoria',
-                'country': 'Australia',
-                'license_number': 'SE-00789012',
-                'capacity': 60,
-                'phone': '(03) 9876 5432',
-                'email': 'contact@melbournekids.com.au',
-                'service_type': 'Long Day Care',
-                'quality_rating': 'Meeting NQS',
-                'license_status': '已批准',
-                'discovered_date': get_today(),
-                'source': 'ACECQA (Sample)',
-                'source_url': 'https://www.acecqa.gov.au/resources/national-registers',
-                'type': '新建',
-            }
-        ]
-        
-        self.status['count'] = len(sample_records)
-        return sample_records
     
     def fetch_new_services(self, existing_approvals: set = None) -> List[Dict]:
         """获取新服务"""
